@@ -20,6 +20,59 @@ template <typename T> void DataChecker::CheckIfConstantSubscript(const T &x) {
   }
 }
 
+void DataChecker::CheckDesignator(const parser::Designator &designator) {
+  const auto name{parser::GetFirstName(designator)};
+  const Scope &scope{context_.FindScope(designator.source)};
+  if (const Symbol *
+      symbol{name.symbol ? &name.symbol->GetUltimate() : nullptr}) { // C876
+    if (symbol->IsDummy()) {
+      context_.Say(
+          name.source, "Data object must not be a dummy argument"_err_en_US);
+    } else if (IsFunction(*symbol)) {
+      context_.Say(
+          name.source, "Data object must not be a function name"_err_en_US);
+    } else if (symbol->IsFuncResult()) {
+      context_.Say(
+          name.source, "Data object must not be a function result"_err_en_US);
+    } else if (IsHostAssociated(*symbol, scope)) {
+      context_.Say(name.source,
+          "Data object must not be accessed by host association"_err_en_US);
+    } else if (IsUseAssociated(*symbol, scope)) {
+      context_.Say(name.source,
+          "Data object must not be accessed by use association"_err_en_US);
+    }
+  }
+  evaluate::ExpressionAnalyzer exprAnalyzer{context_};
+  if (MaybeExpr checked{exprAnalyzer.Analyze(designator)}) {
+    for (const Symbol &symbol : evaluate::CollectSymbols(*checked)) {
+      if (FindCommonBlockContaining(symbol)) {
+        if (const auto *details{
+                symbol.detailsIf<semantics::ObjectEntityDetails>()}) {
+          if (details->commonBlock()) {
+            if (details->commonBlock()->name().empty()) {
+              context_.Say(designator.source,
+                  "Data object part '%s' must not be in blank COMMON"_err_en_US,
+                  symbol.name().ToString());
+            } else if (scope.kind() != Scope::Kind::BlockData) {
+              context_.Say(designator.source,
+                  "Data object part '%s' must not be in a named COMMON block outside a BLOCK DATA program unit"_err_en_US,
+                  symbol.name().ToString());
+            }
+          }
+        }
+      } else if (IsAutomaticArray(symbol)) {
+        context_.Say(designator.source,
+            "Data object part '%s' must not be an automatic array"_err_en_US,
+            symbol.name().ToString());
+      } else if (IsAllocatable(symbol)) {
+        context_.Say(designator.source,
+            "Data object part '%s' must not be an allocatable object"_err_en_US,
+            symbol.name().ToString());
+      }
+    }
+  }
+}
+
 void DataChecker::CheckSubscript(const parser::SectionSubscript &subscript) {
   std::visit(common::visitors{
                  [&](const parser::SubscriptTriplet &triplet) {
@@ -35,28 +88,35 @@ void DataChecker::CheckSubscript(const parser::SectionSubscript &subscript) {
 }
 
 // Returns false if  DataRef has no subscript
-bool DataChecker::CheckAllSubscriptsInDataRef(
-    const parser::DataRef &dataRef, parser::CharBlock source) {
+bool DataChecker::CheckDataRef(const parser::DataRef &dataRef,
+    parser::CharBlock source, bool isRightMostRef) {
+  if (!isRightMostRef) {
+    const auto name{parser::GetLastName(dataRef)};
+    const Symbol *symbol{name.symbol ? &name.symbol->GetUltimate() : nullptr};
+    if (IsPointer(*symbol)) { // C877
+      context_.Say(name.source,
+          "Only right-most part of data object can be a pointer"_err_en_US);
+    }
+  }
   return std::visit(
       common::visitors{
           [&](const parser::Name &) { return false; },
           [&](const common::Indirection<parser::StructureComponent>
                   &structureComp) {
-            return CheckAllSubscriptsInDataRef(
-                structureComp.value().base, source);
+            return CheckDataRef(structureComp.value().base, source, false);
           },
           [&](const common::Indirection<parser::ArrayElement> &arrayElem) {
             for (auto &subscript : arrayElem.value().subscripts) {
               CheckSubscript(subscript);
             }
-            CheckAllSubscriptsInDataRef(arrayElem.value().base, source);
+            CheckDataRef(arrayElem.value().base, source, false);
             return true;
           },
           [&](const common::Indirection<parser::CoindexedNamedObject>
                   &coindexedObj) { // C874
             context_.Say(source,
                 "Data object must not be a coindexed variable"_err_en_US);
-            CheckAllSubscriptsInDataRef(coindexedObj.value().base, source);
+            CheckDataRef(coindexedObj.value().base, source, false);
             return true;
           },
       },
@@ -64,7 +124,7 @@ bool DataChecker::CheckAllSubscriptsInDataRef(
 }
 
 void DataChecker::Leave(const parser::DataStmtConstant &dataConst) {
-  if (auto *structure{
+  if (const auto *structure{
           std::get_if<parser::StructureConstructor>(&dataConst.u)}) {
     for (const auto &component :
         std::get<std::list<parser::ComponentSpec>>(structure->t)) {
@@ -80,11 +140,12 @@ void DataChecker::Leave(const parser::DataStmtConstant &dataConst) {
   }
 }
 
-// TODO: C876, C877, C879
+// TODO: C879
 void DataChecker::Leave(const parser::DataImpliedDo &dataImpliedDo) {
   for (const auto &object :
       std::get<std::list<parser::DataIDoObject>>(dataImpliedDo.t)) {
     if (const auto *designator{parser::Unwrap<parser::Designator>(object)}) {
+      CheckDesignator(*designator);
       if (auto *dataRef{std::get_if<parser::DataRef>(&designator->u)}) {
         evaluate::ExpressionAnalyzer exprAnalyzer{context_};
         if (MaybeExpr checked{exprAnalyzer.Analyze(*dataRef)}) {
@@ -93,8 +154,7 @@ void DataChecker::Leave(const parser::DataImpliedDo &dataImpliedDo) {
                 "Data implied do object must be a variable"_err_en_US);
           }
         }
-        if (!CheckAllSubscriptsInDataRef(*dataRef,
-                designator->source)) { // C880
+        if (!CheckDataRef(*dataRef, designator->source, true)) { // C880
           context_.Say(designator->source,
               "Data implied do object must be subscripted"_err_en_US);
         }
@@ -107,8 +167,9 @@ void DataChecker::Leave(const parser::DataStmtObject &dataObject) {
   if (std::get_if<common::Indirection<parser::Variable>>(&dataObject.u)) {
     if (const auto *designator{
             parser::Unwrap<parser::Designator>(dataObject)}) {
+      CheckDesignator(*designator);
       if (auto *dataRef{std::get_if<parser::DataRef>(&designator->u)}) {
-        CheckAllSubscriptsInDataRef(*dataRef, designator->source);
+        CheckDataRef(*dataRef, designator->source, true);
       }
     } else { // C875
       context_.Say(parser::FindSourceLocation(dataObject),

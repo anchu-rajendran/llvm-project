@@ -730,6 +730,20 @@ bool HasImpureFinal(const DerivedTypeSpec &derived) {
 
 bool IsCoarray(const Symbol &symbol) { return symbol.Corank() > 0; }
 
+bool IsAutomaticArray(const Symbol &symbol) {
+  if (symbol.IsObjectArray()) {
+    for (const ShapeSpec &spec : symbol.get<ObjectEntityDetails>().shape()) {
+      auto &lbound{spec.lbound().GetExplicit()};
+      auto &ubound{spec.ubound().GetExplicit()};
+      if ((lbound && !evaluate::ToInt64(*lbound)) ||
+          (ubound && !evaluate::ToInt64(*ubound))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 bool IsAssumedLengthCharacter(const Symbol &symbol) {
   if (const DeclTypeSpec * type{symbol.GetType()}) {
     return type->category() == DeclTypeSpec::Character &&

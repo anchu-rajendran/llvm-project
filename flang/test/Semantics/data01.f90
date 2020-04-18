@@ -1,6 +1,7 @@
 ! RUN: %B/test/Semantics/test_errors.sh %s %flang %t
 !Test for checking data constraints, C882-C887
-module m1
+
+subroutine CheckRepeat
   type person
     integer :: age
     character(len=25) :: name
@@ -11,10 +12,6 @@ module m1
   integer, parameter :: repeat = -1
   integer :: myAge = 2 
   type(person) myName
-end
-
-subroutine CheckRepeat
-  use m1
   !C882
   !ERROR: Missing initialization for parameter 'uninitialized'
   integer, parameter :: uninitialized
@@ -39,15 +36,20 @@ subroutine CheckRepeat
 end
 
 subroutine CheckValue
-  use m1
+  type person
+    integer :: age
+    character(len=25) :: name
+  end type
+  integer :: myAge = 2 
+  type(person) myName
   !OK: constant structure constructor
-  data myname / person(1, 'Abcd Ijkl') /
+  data myName / person(1, 'Abcd Ijkl') /
   !C883
   !ERROR: 'persn' is not an array
-  data myname / persn(2, 'Abcd Efgh') /
+  data myName / persn(2, 'Abcd Efgh') /
   !C884
   !ERROR: Structure constructor in data value must be a constant expression
-  data myname / person(myAge, 'Abcd Ijkl') /
+  data myName / person(myAge, 'Abcd Ijkl') /
   integer, parameter :: a(5) =(/11, 22, 33, 44, 55/)
   integer :: b(5) =(/11, 22, 33, 44, 55/)
   integer :: i

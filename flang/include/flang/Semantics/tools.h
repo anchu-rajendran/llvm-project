@@ -164,6 +164,7 @@ inline bool IsAssumedRankArray(const Symbol &symbol) {
   const auto *details{symbol.detailsIf<ObjectEntityDetails>()};
   return details && details->IsAssumedRank();
 }
+bool IsAutomaticArray(const Symbol &symbol);
 bool IsAssumedLengthCharacter(const Symbol &);
 bool IsExternal(const Symbol &);
 // Is the symbol modifiable in this scope
