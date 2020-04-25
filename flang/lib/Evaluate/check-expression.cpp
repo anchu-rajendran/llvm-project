@@ -32,6 +32,10 @@ public:
   bool operator()(const semantics::Symbol &symbol) const {
     return IsNamedConstant(symbol) || IsImpliedDoIndex(symbol);
   }
+  bool operator()(const Component &component) const {
+    const auto &symbol{component.GetFirstSymbol()};
+    return IsNamedConstant(symbol);
+  }
   bool operator()(const CoarrayRef &) const { return false; }
   bool operator()(const semantics::ParamValue &param) const {
     return param.isExplicit() && (*this)(param.GetExplicit());
@@ -58,6 +62,9 @@ public:
   }
 };
 
+//bool IsConstantExpr(const Component &x) {
+//  return IsConstantExprHelper{}(x.GetFirstSymbol());
+//}
 template <typename A> bool IsConstantExpr(const A &x) {
   return IsConstantExprHelper{}(x);
 }

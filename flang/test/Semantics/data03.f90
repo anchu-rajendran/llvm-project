@@ -61,6 +61,8 @@ module m
       !C880
       !ERROR: Data implied do object must be subscripted
       DATA(nums % one, i = 1, 5) / 5 * 1 /
+      DATA(newNums % one, i = 1, 5) / 5 * 1 /
+      DATA(newNumsArray(i) % one, i = 1, 5) / 5 * 1 /
       !C880
       !OK: Correct use
       DATA(largeArray(j) % nums % one, j = 1, 10) / 10 * 1 /

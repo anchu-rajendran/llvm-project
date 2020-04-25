@@ -21,55 +21,53 @@ template <typename T> void DataChecker::CheckIfConstantSubscript(const T &x) {
 }
 
 void DataChecker::CheckDesignator(const parser::Designator &designator) {
-  const auto name{parser::GetFirstName(designator)};
   const Scope &scope{context_.FindScope(designator.source)};
-  if (const Symbol *
-      symbol{name.symbol ? &name.symbol->GetUltimate() : nullptr}) { // C876
+  evaluate::ExpressionAnalyzer exprAnalyzer{context_};
+  if (MaybeExpr expr{exprAnalyzer.Analyze(designator)}) {
+  if (const Symbol * symbol{evaluate::GetFirstSymbol(*expr)}) {
     if (symbol->IsDummy()) {
       context_.Say(
-          name.source, "Data object must not be a dummy argument"_err_en_US);
+          "Data object must not be a dummy argument"_err_en_US);
     } else if (IsFunction(*symbol)) {
       context_.Say(
-          name.source, "Data object must not be a function name"_err_en_US);
+          "Data object must not be a function name"_err_en_US);
     } else if (symbol->IsFuncResult()) {
       context_.Say(
-          name.source, "Data object must not be a function result"_err_en_US);
+          "Data object must not be a function result"_err_en_US);
     } else if (IsHostAssociated(*symbol, scope)) {
-      context_.Say(name.source,
+      context_.Say(
           "Data object must not be accessed by host association"_err_en_US);
     } else if (IsUseAssociated(*symbol, scope)) {
-      context_.Say(name.source,
+      context_.Say(
           "Data object must not be accessed by use association"_err_en_US);
     }
   }
-  evaluate::ExpressionAnalyzer exprAnalyzer{context_};
-  if (MaybeExpr checked{exprAnalyzer.Analyze(designator)}) {
-    for (const Symbol &symbol : evaluate::CollectSymbols(*checked)) {
-      if (FindCommonBlockContaining(symbol)) {
-        if (const auto *details{
-                symbol.detailsIf<semantics::ObjectEntityDetails>()}) {
-          if (details->commonBlock()) {
-            if (details->commonBlock()->name().empty()) {
-              context_.Say(designator.source,
-                  "Data object part '%s' must not be in blank COMMON"_err_en_US,
-                  symbol.name().ToString());
-            } else if (scope.kind() != Scope::Kind::BlockData) {
-              context_.Say(designator.source,
-                  "Data object part '%s' must not be in a named COMMON block outside a BLOCK DATA program unit"_err_en_US,
-                  symbol.name().ToString());
-            }
+  for (const Symbol &symbol : evaluate::CollectSymbols(*expr)) {
+    if (FindCommonBlockContaining(symbol)) {
+      if (const auto *details{
+              symbol.detailsIf<semantics::ObjectEntityDetails>()}) {
+        if (details->commonBlock()) {
+          if (details->commonBlock()->name().empty()) {
+            context_.Say(designator.source,
+                "Data object part '%s' must not be in blank COMMON"_err_en_US,
+                symbol.name().ToString());
+          } else if (scope.kind() != Scope::Kind::BlockData) {
+            context_.Say(designator.source,
+                "Data object part '%s' must not be in a named COMMON block outside a BLOCK DATA program unit"_err_en_US,
+                symbol.name().ToString());
           }
         }
-      } else if (IsAutomaticArray(symbol)) {
-        context_.Say(designator.source,
-            "Data object part '%s' must not be an automatic array"_err_en_US,
-            symbol.name().ToString());
-      } else if (IsAllocatable(symbol)) {
-        context_.Say(designator.source,
-            "Data object part '%s' must not be an allocatable object"_err_en_US,
-            symbol.name().ToString());
       }
+    } else if (IsAutomaticArray(symbol)) {
+      context_.Say(designator.source,
+          "Data object part '%s' must not be an automatic array"_err_en_US,
+          symbol.name().ToString());
+    } else if (IsAllocatable(symbol)) {
+      context_.Say(designator.source,
+          "Data object part '%s' must not be an allocatable object"_err_en_US,
+          symbol.name().ToString());
     }
+  }
   }
 }
 
