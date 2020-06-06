@@ -760,6 +760,22 @@ void OpenMPIRBuilder::CreateTaskyield(const LocationDescription &Loc) {
   emitTaskyieldImpl(Loc);
 }
 
+
+OpenMPIRBuilder::InsertPointTy
+OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
+                              ArrayRef<BodyGenCallbackTy> SectionCBs,
+			      PrivatizeCallbackTy PrivCB,
+			      FinalizeCallbackTy FiniCB,
+			      bool IsCancellable) {
+
+  if (!updateToLocation(Loc))
+    return Loc.IP;
+
+  //if(!Nowait){
+  //  CreateBarrier(Loc, OMPD_sections, IsCancellable); 
+  //}
+}
+
 OpenMPIRBuilder::InsertPointTy
 OpenMPIRBuilder::CreateMaster(const LocationDescription &Loc,
                               BodyGenCallbackTy BodyGenCB,

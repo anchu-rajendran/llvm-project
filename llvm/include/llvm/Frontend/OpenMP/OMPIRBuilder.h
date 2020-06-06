@@ -315,7 +315,7 @@ public:
                              BodyGenCallbackTy BodyGenCB,
                              FinalizeCallbackTy FiniCB);
 
-  /// Generator for '#omp master'
+  /// Generator for '#omp critical'
   ///
   /// \param Loc The insert and source location description.
   /// \param BodyGenCB Callback that will generate the region body code.
@@ -323,11 +323,27 @@ public:
   /// \param CriticalName name of the lock used by the critical directive
   /// \param HintInst Hint Instruction for hint clause associated with critical
   ///
-  /// \returns The insertion position *after* the master.
+  /// \returns The insertion position *after* the critical.
   InsertPointTy CreateCritical(const LocationDescription &Loc,
                                BodyGenCallbackTy BodyGenCB,
                                FinalizeCallbackTy FiniCB,
                                StringRef CriticalName, Value *HintInst);
+
+
+  /// Generator for '#omp sections'
+  ///
+  /// \param Loc The insert and source location description.
+  /// \param SectionCBs Callbacks that will generate body of each section.
+  /// \param PrivCB Callback to copy a given variable (think copy constructor).
+  /// \param FiniCB Callback to finalize variable copies.
+  /// \param IsCancellable Flag to indicate a cancellable parallel region.
+  ///
+  /// \returns The insertion position *after* the sections.
+  InsertPointTy CreateSections(const LocationDescription &Loc,
+                              ArrayRef<BodyGenCallbackTy> SectionCBs,
+			      PrivatizeCallbackTy PrivCB,
+			      FinalizeCallbackTy FiniCB,
+			      bool IsCancellable);
 
 private:
   /// Common interface for generating entry calls for OMP Directives.
