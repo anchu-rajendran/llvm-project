@@ -340,7 +340,7 @@ public:
   ///
   /// \returns The insertion position *after* the sections.
   InsertPointTy CreateSections(const LocationDescription &Loc,
-                              ArrayRef<BodyGenCallbackTy> SectionCBs,
+		              ArrayRef<BodyGenCallbackTy> SectionCBs,
 			      PrivatizeCallbackTy PrivCB,
 			      FinalizeCallbackTy FiniCB,
 			      bool IsCancellable);

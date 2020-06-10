@@ -24,7 +24,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/CodeExtractor.h"
-
+#include <iostream>
 #include <sstream>
 
 #define DEBUG_TYPE "openmp-ir-builder"
@@ -767,9 +767,136 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
 			      PrivatizeCallbackTy PrivCB,
 			      FinalizeCallbackTy FiniCB,
 			      bool IsCancellable) {
-
   if (!updateToLocation(Loc))
     return Loc.IP;
+  //BasicBlock *InsertBB = Builder.GetInsertBlock();
+  //Function *OuterFn = InsertBB->getParent();
+
+  AllocaInst *SectionsLB = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.lb");
+  return Builder.saveIP();
+  //callback to create the body of sections
+  //BodyGenCallbackTy BodyGenCB = [this](InsertPointTy AllocaIP,
+  //		                           InsertPointTy CodeGenIP,
+  //					   llvm::BasicBlock &FiniBB){
+    //DONE
+    //AllocaInst *SectionsLB = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.lb");
+    //DONE
+
+    //TODO
+    //// Emit helper vars inits.
+    //LValue LB = createSectionLVal(CGF, KmpInt32Ty, ".omp.sections.lb.",
+    //                              CGF.Builder.getInt32(0));
+    //llvm::ConstantInt *GlobalUBVal = CS != nullptr
+    //                                     ? CGF.Builder.getInt32(CS->size() - 1)
+    //                                     : CGF.Builder.getInt32(0);
+    //LValue UB =
+    //    createSectionLVal(CGF, KmpInt32Ty, ".omp.sections.ub.", GlobalUBVal);
+    //LValue ST = createSectionLVal(CGF, KmpInt32Ty, ".omp.sections.st.",
+    //                              CGF.Builder.getInt32(1));
+    //LValue IL = createSectionLVal(CGF, KmpInt32Ty, ".omp.sections.il.",
+    //                              CGF.Builder.getInt32(0));
+    //// Loop counter.
+    //LValue IV = createSectionLVal(CGF, KmpInt32Ty, ".omp.sections.iv.");
+    //OpaqueValueExpr IVRefExpr(S.getBeginLoc(), KmpInt32Ty, VK_LValue);
+    //CodeGenFunction::OpaqueValueMapping OpaqueIV(CGF, &IVRefExpr, IV);
+    //OpaqueValueExpr UBRefExpr(S.getBeginLoc(), KmpInt32Ty, VK_LValue);
+    //CodeGenFunction::OpaqueValueMapping OpaqueUB(CGF, &UBRefExpr, UB);
+    //// Generate condition for loop.
+    //BinaryOperator *Cond = BinaryOperator::Create(
+    //    C, &IVRefExpr, &UBRefExpr, BO_LE, C.BoolTy, VK_RValue, OK_Ordinary,
+    //    S.getBeginLoc(), FPOptions(C.getLangOpts()));
+    //// Increment for loop counter.
+    //UnaryOperator *Inc = UnaryOperator::Create(
+    //    C, &IVRefExpr, UO_PreInc, KmpInt32Ty, VK_RValue, OK_Ordinary,
+    //    S.getBeginLoc(), true, FPOptions(C.getLangOpts()));
+    //auto &&BodyGen = [CapturedStmt, CS, &S, &IV](CodeGenFunction &CGF) {
+    //  // Iterate through all sections and emit a switch construct:
+    //  // switch (IV) {
+    //  //   case 0:
+    //  //     <SectionStmt[0]>;
+    //  //     break;
+    //  // ...
+    //  //   case <NumSection> - 1:
+    //  //     <SectionStmt[<NumSection> - 1]>;
+    //  //     break;
+    //  // }
+    //  // .omp.sections.exit:
+    //  llvm::BasicBlock *ExitBB = CGF.createBasicBlock(".omp.sections.exit");
+    //  llvm::SwitchInst *SwitchStmt =
+    //      CGF.Builder.CreateSwitch(CGF.EmitLoadOfScalar(IV, S.getBeginLoc()),
+    //                               ExitBB, CS == nullptr ? 1 : CS->size());
+    //  if (CS) {
+    //    unsigned CaseNumber = 0;
+    //    for (const Stmt *SubStmt : CS->children()) {
+    //      auto CaseBB = CGF.createBasicBlock(".omp.sections.case");
+    //      CGF.EmitBlock(CaseBB);
+    //      SwitchStmt->addCase(CGF.Builder.getInt32(CaseNumber), CaseBB);
+    //      CGF.EmitStmt(SubStmt);
+    //      CGF.EmitBranch(ExitBB);
+    //      ++CaseNumber;
+    //    }
+    //  } else {
+    //    llvm::BasicBlock *CaseBB = CGF.createBasicBlock(".omp.sections.case");
+    //    CGF.EmitBlock(CaseBB);
+    //    SwitchStmt->addCase(CGF.Builder.getInt32(0), CaseBB);
+    //    CGF.EmitStmt(CapturedStmt);
+    //    CGF.EmitBranch(ExitBB);
+    //  }
+    //  CGF.EmitBlock(ExitBB, /*IsFinished=*/true);
+    //};
+
+    //CodeGenFunction::OMPPrivateScope LoopScope(CGF);
+    //if (CGF.EmitOMPFirstprivateClause(S, LoopScope)) {
+    //  // Emit implicit barrier to synchronize threads and avoid data races on
+    //  // initialization of firstprivate variables and post-update of lastprivate
+    //  // variables.
+    //  CGF.CGM.getOpenMPRuntime().emitBarrierCall(
+    //      CGF, S.getBeginLoc(), OMPD_unknown, /*EmitChecks=*/false,
+    //      /*ForceSimpleCall=*/true);
+    //}
+    //CGF.EmitOMPPrivateClause(S, LoopScope);
+    //CGOpenMPRuntime::LastprivateConditionalRAII LPCRegion(CGF, S, IV);
+    //HasLastprivates = CGF.EmitOMPLastprivateClauseInit(S, LoopScope);
+    //CGF.EmitOMPReductionClauseInit(S, LoopScope);
+    //(void)LoopScope.Privatize();
+    //if (isOpenMPTargetExecutionDirective(S.getDirectiveKind()))
+    //  CGF.CGM.getOpenMPRuntime().adjustTargetSpecificDataForLambdas(CGF, S);
+
+    //// Emit static non-chunked loop.
+    //OpenMPScheduleTy ScheduleKind;
+    //ScheduleKind.Schedule = OMPC_SCHEDULE_static;
+    //CGOpenMPRuntime::StaticRTInput StaticInit(
+    //    /*IVSize=*/32, /*IVSigned=*/true, /*Ordered=*/false, IL.getAddress(CGF),
+    //    LB.getAddress(CGF), UB.getAddress(CGF), ST.getAddress(CGF));
+    //CGF.CGM.getOpenMPRuntime().emitForStaticInit(
+    //    CGF, S.getBeginLoc(), S.getDirectiveKind(), ScheduleKind, StaticInit);
+    //// UB = min(UB, GlobalUB);
+    //llvm::Value *UBVal = CGF.EmitLoadOfScalar(UB, S.getBeginLoc());
+    //llvm::Value *MinUBGlobalUB = CGF.Builder.CreateSelect(
+    //    CGF.Builder.CreateICmpSLT(UBVal, GlobalUBVal), UBVal, GlobalUBVal);
+    //CGF.EmitStoreOfScalar(MinUBGlobalUB, UB);
+    //// IV = LB;
+    //CGF.EmitStoreOfScalar(CGF.EmitLoadOfScalar(LB, S.getBeginLoc()), IV);
+    //// while (idx <= UB) { BODY; ++idx; }
+    //CGF.EmitOMPInnerLoop(S, /*RequiresCleanup=*/false, Cond, Inc, BodyGen,
+    //                     [](CodeGenFunction &) {});
+    //// Tell the runtime we are done.
+    //auto &&CodeGen = [&S](CodeGenFunction &CGF) {
+    //  CGF.CGM.getOpenMPRuntime().emitForStaticFinish(CGF, S.getEndLoc(),
+    //                                                 S.getDirectiveKind());
+    //};
+    //CGF.OMPCancelStack.emitExit(CGF, S.getDirectiveKind(), CodeGen);
+    //CGF.EmitOMPReductionClauseFinal(S, /*ReductionKind=*/OMPD_parallel);
+    //// Emit post-update of the reduction variables if IsLastIter != 0.
+    //emitPostUpdateForReductionClause(CGF, S, [IL, &S](CodeGenFunction &CGF) {
+    //  return CGF.Builder.CreateIsNotNull(
+    //      CGF.EmitLoadOfScalar(IL, S.getBeginLoc()));
+    //});
+    //TODO
+
+  //};
+  //create the variables;
+  //create a callback emitting the body of each section and wrapping the code
 
   //if(!Nowait){
   //  CreateBarrier(Loc, OMPD_sections, IsCancellable); 

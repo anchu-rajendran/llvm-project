@@ -3435,12 +3435,35 @@ void CodeGenFunction::EmitSections(const OMPExecutableDirective &S) {
 }
 
 void CodeGenFunction::EmitOMPSectionsDirective(const OMPSectionsDirective &S) {
-  {
-    auto LPCRegion =
-        CGOpenMPRuntime::LastprivateConditionalRAII::disable(*this, S);
-    OMPLexicalScope Scope(*this, S, OMPD_unknown);
-    EmitSections(S);
+  if (llvm::OpenMPIRBuilder *OMPBuilder = CGM.getOpenMPIRBuilder()) {
+    using InsertPointTy = llvm::OpenMPIRBuilder::InsertPointTy;
+
+
+    auto FiniCB = [this](InsertPointTy IP) {
+      //OMPBuilderCBHelpers::FinalizeOMPRegion(*this, IP);
+    };
+
+    // Privatization callback that performs appropriate action for
+    // shared/private/firstprivate/lastprivate/copyin/... variables.
+    //
+    // TODO: This defaults to shared right now.
+    auto PrivCB = [](InsertPointTy AllocaIP, InsertPointTy CodeGenIP,
+                     llvm::Value &Val, llvm::Value *&ReplVal) {
+      // The next line is appropriate only for variables (Val) with the
+      // data-sharing attribute "shared".
+      ReplVal = &Val;
+
+      return CodeGenIP;
+    };
+
+    Builder.restoreIP(OMPBuilder->CreateSections(Builder, {}, PrivCB, FiniCB, false));
+
+    return;
   }
+  auto LPCRegion =
+      CGOpenMPRuntime::LastprivateConditionalRAII::disable(*this, S);
+  OMPLexicalScope Scope(*this, S, OMPD_unknown);
+  EmitSections(S);
   // Emit an implicit barrier at the end.
   if (!S.getSingleClause<OMPNowaitClause>()) {
     CGM.getOpenMPRuntime().emitBarrierCall(*this, S.getBeginLoc(),
