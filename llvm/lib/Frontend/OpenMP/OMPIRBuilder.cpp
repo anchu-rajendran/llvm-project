@@ -769,20 +769,45 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
 			      bool IsCancellable) {
   if (!updateToLocation(Loc))
     return Loc.IP;
-  //BasicBlock *InsertBB = Builder.GetInsertBlock();
-  //Function *OuterFn = InsertBB->getParent();
+  Constant *SrcLocStr = getOrCreateSrcLocStr(Loc);
+  Value *Ident = getOrCreateIdent(SrcLocStr);
+  Value *ThreadID = getOrCreateThreadID(Ident);
 
-  AllocaInst *SectionsLB = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.lb");
+
+  //TODO: We may have to outline from here or find the AllocaIP and insert the below code
+  AllocaInst *LB = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.lb");
+  AllocaInst *UB = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.ub");
+  AllocaInst *ST = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.st.");
+  AllocaInst *IL = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.il.");
+  Builder.CreateStore(Builder.getInt32(0), LB);
+  //TODO: May have to add an assert  CS != nullptr in clang.
+  llvm::ConstantInt *GlobalUBVal = SectionCBs.size()>0
+                                       ? Builder.getInt32(SectionCBs.size() - 1)
+                                       : Builder.getInt32(0);
+  Builder.CreateStore(GlobalUBVal, UB);
+  StoreInst *St = Builder.CreateStore(Builder.getInt32(1), ST);
+
+
+  //create bb
+  //BasicBlock *InsertBB = Builder.GetInsertBlock();
+  //auto *NewBB = BasicBlock::Create(M.getContext(), "ompFC");
+  //auto *UI = new UnreachableInst(Builder.getContext(), NewBB);
+  //Function *CurFn = InsertBB->getParent();
+  //CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), NewBB);
+  //Builder.SetInsertPoint(NewBB->getTerminator());
+
+  //split bb
+  //verify the below.
+  //BasicBlock *InsertBB = Builder.GetInsertBlock();
+  //auto *UI = new UnreachableInst(Builder.getContext(), InsertBB);
+  //BasicBlock *ForCondBB = InsertBB->splitBasicBlock(UI, "ompFC");
+ 
   return Builder.saveIP();
   //callback to create the body of sections
   //BodyGenCallbackTy BodyGenCB = [this](InsertPointTy AllocaIP,
   //		                           InsertPointTy CodeGenIP,
   //					   llvm::BasicBlock &FiniBB){
     //DONE
-    //AllocaInst *SectionsLB = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.lb");
-    //DONE
-
-    //TODO
     //// Emit helper vars inits.
     //LValue LB = createSectionLVal(CGF, KmpInt32Ty, ".omp.sections.lb.",
     //                              CGF.Builder.getInt32(0));
@@ -797,6 +822,9 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
     //                              CGF.Builder.getInt32(0));
     //// Loop counter.
     //LValue IV = createSectionLVal(CGF, KmpInt32Ty, ".omp.sections.iv.");
+    //DONE
+
+    //TODO
     //OpaqueValueExpr IVRefExpr(S.getBeginLoc(), KmpInt32Ty, VK_LValue);
     //CodeGenFunction::OpaqueValueMapping OpaqueIV(CGF, &IVRefExpr, IV);
     //OpaqueValueExpr UBRefExpr(S.getBeginLoc(), KmpInt32Ty, VK_LValue);
