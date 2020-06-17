@@ -24,7 +24,6 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/CodeExtractor.h"
-#include <iostream>
 #include <sstream>
 
 #define DEBUG_TYPE "openmp-ir-builder"
@@ -784,23 +783,27 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   llvm::ConstantInt *GlobalUBVal = SectionCBs.size()>0
                                        ? Builder.getInt32(SectionCBs.size() - 1)
                                        : Builder.getInt32(0);
-  Builder.CreateStore(GlobalUBVal, UB);
-  StoreInst *St = Builder.CreateStore(Builder.getInt32(1), ST);
+  StoreInst *St1 = Builder.CreateStore(GlobalUBVal, UB);
 
-
+  //create the binary operator to compare whether the value of iv is less than ub.
+ 
+  //fails
   //create bb
-  //BasicBlock *InsertBB = Builder.GetInsertBlock();
   //auto *NewBB = BasicBlock::Create(M.getContext(), "ompFC");
   //auto *UI = new UnreachableInst(Builder.getContext(), NewBB);
-  //Function *CurFn = InsertBB->getParent();
-  //CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), NewBB);
-  //Builder.SetInsertPoint(NewBB->getTerminator());
+  //NewBB->dump();
+  //fails
+
 
   //split bb
-  //verify the below.
-  //BasicBlock *InsertBB = Builder.GetInsertBlock();
-  //auto *UI = new UnreachableInst(Builder.getContext(), InsertBB);
-  //BasicBlock *ForCondBB = InsertBB->splitBasicBlock(UI, "ompFC");
+  //fails
+  BasicBlock *InsertBB = Builder.GetInsertBlock();
+  auto *UI = new UnreachableInst(Builder.getContext(), InsertBB);
+  BasicBlock *ForCondBB = InsertBB->splitBasicBlock(UI, "omp.for.cond");
+  UI->eraseFromParent();
+  Builder.SetInsertPoint(ForCondBB);
+  StoreInst *St2 = Builder.CreateStore(Builder.getInt32(1), ST);
+  //
  
   return Builder.saveIP();
   //callback to create the body of sections
