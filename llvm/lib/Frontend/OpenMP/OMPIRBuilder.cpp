@@ -778,31 +778,69 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   AllocaInst *UB = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.ub");
   AllocaInst *ST = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.st.");
   AllocaInst *IL = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.il.");
+  AllocaInst *IV = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.iv.");
   Builder.CreateStore(Builder.getInt32(0), LB);
   //TODO: May have to add an assert  CS != nullptr in clang.
   llvm::ConstantInt *GlobalUBVal = SectionCBs.size()>0
                                        ? Builder.getInt32(SectionCBs.size() - 1)
                                        : Builder.getInt32(0);
   StoreInst *St1 = Builder.CreateStore(GlobalUBVal, UB);
+  StoreInst *St2 = Builder.CreateStore(Builder.getInt32(1), ST);
+  StoreInst *St3= Builder.CreateStore(Builder.getInt32(0), IL);
+  //TODO: need to insert code to assign IV properly
+  StoreInst *St4= Builder.CreateStore(Builder.getInt32(0), IV);
 
   //create the binary operator to compare whether the value of iv is less than ub.
  
   //fails
   //create bb
-  //auto *NewBB = BasicBlock::Create(M.getContext(), "ompFC");
-  //auto *UI = new UnreachableInst(Builder.getContext(), NewBB);
+  BasicBlock *InsertBB = Builder.GetInsertBlock();
+  auto *ForBodyBB = BasicBlock::Create(M.getContext(), "omp.for.body");
+  auto *ForExitBB = BasicBlock::Create(M.getContext(), "omp.for.exit");
+  auto *ForIncBB = BasicBlock::Create(M.getContext(), "omp.for.inc");
+  auto *SectionsExitBB = BasicBlock::Create(M.getContext(), "omp.sections.exit");
+
+  Function *CurFn = InsertBB->getParent();
+  CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), ForIncBB);
+  CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), ForBodyBB);
+  CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), ForExitBB);
+  CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), SectionsExitBB);
+
+
+ 
   //NewBB->dump();
   //fails
 
 
-  //split bb
-  //fails
-  BasicBlock *InsertBB = Builder.GetInsertBlock();
+  //for condition
   auto *UI = new UnreachableInst(Builder.getContext(), InsertBB);
   BasicBlock *ForCondBB = InsertBB->splitBasicBlock(UI, "omp.for.cond");
   UI->eraseFromParent();
   Builder.SetInsertPoint(ForCondBB);
-  StoreInst *St2 = Builder.CreateStore(Builder.getInt32(1), ST);
+  Instruction *IVRef = Builder.CreateLoad(IV);
+  Instruction *UBRef = Builder.CreateLoad(UB);
+  Value *cmpRef = Builder.CreateICmpSLE(IVRef, UBRef, "cmp");
+  Builder.CreateCondBr(cmpRef, ForBodyBB, ForExitBB);
+
+  //for Body
+  Builder.SetInsertPoint(ForBodyBB);
+  Builder.CreateSwitch(Builder.CreateLoad(IV), SectionsExitBB);
+
+  //Modify here
+
+
+  Builder.SetInsertPoint(SectionsExitBB);
+  Builder.CreateBr(ForIncBB);
+  //for inc 
+  Builder.SetInsertPoint(ForIncBB);
+  Instruction *IVRef2 = Builder.CreateLoad(IV);
+  Builder.CreateNSWAdd(IVRef2, Builder.getInt32(1), "inc");
+  Builder.CreateBr(ForCondBB);
+  
+  
+  Builder.SetInsertPoint(ForExitBB);
+
+
   //
  
   return Builder.saveIP();
