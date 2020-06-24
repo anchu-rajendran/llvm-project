@@ -3440,8 +3440,23 @@ void CodeGenFunction::EmitOMPSectionsDirective(const OMPSectionsDirective &S) {
 
 
     auto FiniCB = [this](InsertPointTy IP) {
-      //OMPBuilderCBHelpers::FinalizeOMPRegion(*this, IP);
+      OMPBuilderCBHelpers::FinalizeOMPRegion(*this, IP);
     };
+    using BodyGenCallbackTy =
+	          llvm::function_ref<void(InsertPointTy AllocaIP, InsertPointTy CodeGenIP,
+				                          llvm::BasicBlock &ContinuationBB)>;
+
+    const Stmt *CapturedStmt = S.getInnermostCapturedStmt()->getCapturedStmt();
+    const auto *CS = dyn_cast<CompoundStmt>(CapturedStmt);
+    llvm::SmallVector<BodyGenCallbackTy, 4> SectionCBVector;
+    for (const Stmt *SubStmt : CS->children()) {
+     auto sectionCB= [SubStmt, this](InsertPointTy AllocaIP,
+		      InsertPointTy CodeGenIP,
+		      llvm::BasicBlock &FiniBB){
+      this->EmitStmt(SubStmt);
+     };
+     SectionCBVector.push_back(sectionCB);
+    }
 
     // Privatization callback that performs appropriate action for
     // shared/private/firstprivate/lastprivate/copyin/... variables.
@@ -3455,8 +3470,9 @@ void CodeGenFunction::EmitOMPSectionsDirective(const OMPSectionsDirective &S) {
 
       return CodeGenIP;
     };
-
-    Builder.restoreIP(OMPBuilder->CreateSections(Builder, {}, PrivCB, FiniCB, false));
+    
+    ArrayRef<BodyGenCallbackTy> SectionCBs = makeArrayRef(SectionCBVector);
+    Builder.restoreIP(OMPBuilder->CreateSections(Builder, SectionCBs, PrivCB, FiniCB, false));
 
     return;
   }

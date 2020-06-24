@@ -25,6 +25,7 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/CodeExtractor.h"
 #include <sstream>
+#include <iostream>
 
 #define DEBUG_TYPE "openmp-ir-builder"
 
@@ -824,10 +825,20 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
 
   //for Body
   Builder.SetInsertPoint(ForBodyBB);
-  Builder.CreateSwitch(Builder.CreateLoad(IV), SectionsExitBB);
-
+  SwitchInst *SwitchStmt = Builder.CreateSwitch(Builder.CreateLoad(IV), SectionsExitBB);
+  
+  unsigned CaseNumber = 0;
+  for (auto SectionCB : SectionCBs) {
+    auto *CaseBB = BasicBlock::Create(M.getContext(), ".omp.sections.case");
+    CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), CaseBB);
+    SwitchStmt->addCase(Builder.getInt32(CaseNumber), CaseBB);
+    Builder.SetInsertPoint(CaseBB);
+//    SectionCB(InsertPointTy(),
+//		     Builder.saveIP(), *SectionsExitBB);
+    Builder.CreateBr(SectionsExitBB);
+    CaseNumber++;
+  }
   //Modify here
-
 
   Builder.SetInsertPoint(SectionsExitBB);
   Builder.CreateBr(ForIncBB);
