@@ -774,14 +774,13 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   Value *ThreadID = getOrCreateThreadID(Ident);
 
 
-  //TODO: We may have to outline from here or find the AllocaIP and insert the below code
+  //TODO: We have find the AllocaIP and insert the below code
   AllocaInst *LB = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.lb");
   AllocaInst *UB = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.ub");
   AllocaInst *ST = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.st.");
   AllocaInst *IL = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.il.");
   AllocaInst *IV = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.iv.");
   Builder.CreateStore(Builder.getInt32(0), LB);
-  //TODO: May have to add an assert  CS != nullptr in clang.
   llvm::ConstantInt *GlobalUBVal = SectionCBs.size()>0
                                        ? Builder.getInt32(SectionCBs.size() - 1)
                                        : Builder.getInt32(0);
@@ -808,11 +807,6 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), SectionsExitBB);
 
 
- 
-  //NewBB->dump();
-  //fails
-
-
   //for condition
   auto *UI = new UnreachableInst(Builder.getContext(), InsertBB);
   BasicBlock *ForCondBB = InsertBB->splitBasicBlock(UI, "omp.for.cond");
@@ -833,15 +827,16 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
     CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), CaseBB);
     SwitchStmt->addCase(Builder.getInt32(CaseNumber), CaseBB);
     Builder.SetInsertPoint(CaseBB);
-//    SectionCB(InsertPointTy(),
-//		     Builder.saveIP(), *SectionsExitBB);
-    Builder.CreateBr(SectionsExitBB);
+    SectionCB(InsertPointTy(),
+		     Builder.saveIP(), *SectionsExitBB);
     CaseNumber++;
   }
   //Modify here
 
+  //sections exit
   Builder.SetInsertPoint(SectionsExitBB);
   Builder.CreateBr(ForIncBB);
+  
   //for inc 
   Builder.SetInsertPoint(ForIncBB);
   Instruction *IVRef2 = Builder.CreateLoad(IV);
@@ -850,82 +845,10 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   
   
   Builder.SetInsertPoint(ForExitBB);
-
-
-  //
  
   return Builder.saveIP();
-  //callback to create the body of sections
-  //BodyGenCallbackTy BodyGenCB = [this](InsertPointTy AllocaIP,
-  //		                           InsertPointTy CodeGenIP,
-  //					   llvm::BasicBlock &FiniBB){
-    //DONE
-    //// Emit helper vars inits.
-    //LValue LB = createSectionLVal(CGF, KmpInt32Ty, ".omp.sections.lb.",
-    //                              CGF.Builder.getInt32(0));
-    //llvm::ConstantInt *GlobalUBVal = CS != nullptr
-    //                                     ? CGF.Builder.getInt32(CS->size() - 1)
-    //                                     : CGF.Builder.getInt32(0);
-    //LValue UB =
-    //    createSectionLVal(CGF, KmpInt32Ty, ".omp.sections.ub.", GlobalUBVal);
-    //LValue ST = createSectionLVal(CGF, KmpInt32Ty, ".omp.sections.st.",
-    //                              CGF.Builder.getInt32(1));
-    //LValue IL = createSectionLVal(CGF, KmpInt32Ty, ".omp.sections.il.",
-    //                              CGF.Builder.getInt32(0));
-    //// Loop counter.
-    //LValue IV = createSectionLVal(CGF, KmpInt32Ty, ".omp.sections.iv.");
-    //DONE
-
-    //TODO
-    //OpaqueValueExpr IVRefExpr(S.getBeginLoc(), KmpInt32Ty, VK_LValue);
-    //CodeGenFunction::OpaqueValueMapping OpaqueIV(CGF, &IVRefExpr, IV);
-    //OpaqueValueExpr UBRefExpr(S.getBeginLoc(), KmpInt32Ty, VK_LValue);
-    //CodeGenFunction::OpaqueValueMapping OpaqueUB(CGF, &UBRefExpr, UB);
-    //// Generate condition for loop.
-    //BinaryOperator *Cond = BinaryOperator::Create(
-    //    C, &IVRefExpr, &UBRefExpr, BO_LE, C.BoolTy, VK_RValue, OK_Ordinary,
-    //    S.getBeginLoc(), FPOptions(C.getLangOpts()));
-    //// Increment for loop counter.
-    //UnaryOperator *Inc = UnaryOperator::Create(
-    //    C, &IVRefExpr, UO_PreInc, KmpInt32Ty, VK_RValue, OK_Ordinary,
-    //    S.getBeginLoc(), true, FPOptions(C.getLangOpts()));
-    //auto &&BodyGen = [CapturedStmt, CS, &S, &IV](CodeGenFunction &CGF) {
-    //  // Iterate through all sections and emit a switch construct:
-    //  // switch (IV) {
-    //  //   case 0:
-    //  //     <SectionStmt[0]>;
-    //  //     break;
-    //  // ...
-    //  //   case <NumSection> - 1:
-    //  //     <SectionStmt[<NumSection> - 1]>;
-    //  //     break;
-    //  // }
-    //  // .omp.sections.exit:
-    //  llvm::BasicBlock *ExitBB = CGF.createBasicBlock(".omp.sections.exit");
-    //  llvm::SwitchInst *SwitchStmt =
-    //      CGF.Builder.CreateSwitch(CGF.EmitLoadOfScalar(IV, S.getBeginLoc()),
-    //                               ExitBB, CS == nullptr ? 1 : CS->size());
-    //  if (CS) {
-    //    unsigned CaseNumber = 0;
-    //    for (const Stmt *SubStmt : CS->children()) {
-    //      auto CaseBB = CGF.createBasicBlock(".omp.sections.case");
-    //      CGF.EmitBlock(CaseBB);
-    //      SwitchStmt->addCase(CGF.Builder.getInt32(CaseNumber), CaseBB);
-    //      CGF.EmitStmt(SubStmt);
-    //      CGF.EmitBranch(ExitBB);
-    //      ++CaseNumber;
-    //    }
-    //  } else {
-    //    llvm::BasicBlock *CaseBB = CGF.createBasicBlock(".omp.sections.case");
-    //    CGF.EmitBlock(CaseBB);
-    //    SwitchStmt->addCase(CGF.Builder.getInt32(0), CaseBB);
-    //    CGF.EmitStmt(CapturedStmt);
-    //    CGF.EmitBranch(ExitBB);
-    //  }
-    //  CGF.EmitBlock(ExitBB, /*IsFinished=*/true);
-    //};
-
-    //CodeGenFunction::OMPPrivateScope LoopScope(CGF);
+    
+  //CodeGenFunction::OMPPrivateScope LoopScope(CGF);
     //if (CGF.EmitOMPFirstprivateClause(S, LoopScope)) {
     //  // Emit implicit barrier to synchronize threads and avoid data races on
     //  // initialization of firstprivate variables and post-update of lastprivate
