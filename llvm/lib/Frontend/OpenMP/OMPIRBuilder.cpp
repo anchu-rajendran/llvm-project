@@ -760,7 +760,6 @@ void OpenMPIRBuilder::CreateTaskyield(const LocationDescription &Loc) {
   emitTaskyieldImpl(Loc);
 }
 
-
 OpenMPIRBuilder::InsertPointTy
 OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
                               ArrayRef<BodyGenCallbackTy> SectionCBs,
@@ -773,41 +772,28 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   Value *Ident = getOrCreateIdent(SrcLocStr);
   Value *ThreadID = getOrCreateThreadID(Ident);
 
-
-  //TODO: We have find the AllocaIP and insert the below code
-  AllocaInst *LB = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.lb");
-  AllocaInst *UB = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.ub");
-  AllocaInst *ST = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.st.");
-  AllocaInst *IL = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.il.");
-  AllocaInst *IV = Builder.CreateAlloca(Int32, nullptr, ".omp.sections.iv.");
-  Builder.CreateStore(Builder.getInt32(0), LB);
-  llvm::ConstantInt *GlobalUBVal = SectionCBs.size()>0
-                                       ? Builder.getInt32(SectionCBs.size() - 1)
-                                       : Builder.getInt32(0);
-  StoreInst *St1 = Builder.CreateStore(GlobalUBVal, UB);
-  StoreInst *St2 = Builder.CreateStore(Builder.getInt32(1), ST);
-  StoreInst *St3= Builder.CreateStore(Builder.getInt32(0), IL);
-  //TODO: need to insert code to assign IV properly
-  StoreInst *St4= Builder.CreateStore(Builder.getInt32(0), IV);
-
-  //create the binary operator to compare whether the value of iv is less than ub.
- 
-  //fails
-  //create bb
   BasicBlock *InsertBB = Builder.GetInsertBlock();
+  Function *CurFn = InsertBB->getParent();
+
+  Value *LB = Builder.CreateLVal(Int32,"omp.sections.lb", Builder.getInt32(0));
+  ConstantInt *GlobalUBVal = Builder.getInt32(SectionCBs.size() - 1);
+  Value *UB = Builder.CreateLVal(Int32, ".omp.sections.ub", GlobalUBVal);
+  Value *ST = Builder.CreateLVal(Int32, ".omp.sections.st.", Builder.getInt32(1));
+  Value *IL = Builder.CreateLVal(Int32, ".omp.sections.il.", Builder.getInt32(0));
+  Value *IV = Builder.CreateLVal(Int32, ".omp.sections.iv.", Builder.getInt32(0));
+
+  //create new basic blocks
   auto *ForBodyBB = BasicBlock::Create(M.getContext(), "omp.for.body");
   auto *ForExitBB = BasicBlock::Create(M.getContext(), "omp.for.exit");
   auto *ForIncBB = BasicBlock::Create(M.getContext(), "omp.for.inc");
   auto *SectionsExitBB = BasicBlock::Create(M.getContext(), "omp.sections.exit");
-
-  Function *CurFn = InsertBB->getParent();
   CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), ForIncBB);
   CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), ForBodyBB);
   CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), ForExitBB);
   CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), SectionsExitBB);
 
-
-  //for condition
+  //split IndertBB to create the basic block for emitting
+  //for-loop-condition of inner-for-loop
   auto *UI = new UnreachableInst(Builder.getContext(), InsertBB);
   BasicBlock *ForCondBB = InsertBB->splitBasicBlock(UI, "omp.for.cond");
   UI->eraseFromParent();
@@ -820,7 +806,8 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   //for Body
   Builder.SetInsertPoint(ForBodyBB);
   SwitchInst *SwitchStmt = Builder.CreateSwitch(Builder.CreateLoad(IV), SectionsExitBB);
-  
+
+  //each section in emitted as a switch case
   unsigned CaseNumber = 0;
   for (auto SectionCB : SectionCBs) {
     auto *CaseBB = BasicBlock::Create(M.getContext(), ".omp.sections.case");
@@ -831,7 +818,6 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
 		     Builder.saveIP(), *SectionsExitBB);
     CaseNumber++;
   }
-  //Modify here
 
   //sections exit
   Builder.SetInsertPoint(SectionsExitBB);
@@ -840,12 +826,11 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   //for inc 
   Builder.SetInsertPoint(ForIncBB);
   Instruction *IVRef2 = Builder.CreateLoad(IV);
-  Builder.CreateNSWAdd(IVRef2, Builder.getInt32(1), "inc");
+  Value *Inc = Builder.CreateNSWAdd(IVRef2, Builder.getInt32(1), "inc");
+  Builder.CreateStore(Inc, IV);
   Builder.CreateBr(ForCondBB);
   
-  
   Builder.SetInsertPoint(ForExitBB);
- 
   return Builder.saveIP();
     
   //CodeGenFunction::OMPPrivateScope LoopScope(CGF);

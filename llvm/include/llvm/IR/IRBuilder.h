@@ -1093,6 +1093,8 @@ public:
     return Insert(new UnreachableInst(Context));
   }
 
+
+
   //===--------------------------------------------------------------------===//
   // Instruction creation methods: Binary Operators
   //===--------------------------------------------------------------------===//
@@ -1630,6 +1632,14 @@ public:
 
   StoreInst *CreateStore(Value *Val, Value *Ptr, bool isVolatile = false) {
     return CreateAlignedStore(Val, Ptr, MaybeAlign(), isVolatile);
+  }
+
+  Value * CreateLVal(Type *Ty, const Twine &Name = "", Value *Init = nullptr) {
+    Value *LVal = CreateAlloca(Ty, nullptr, Name);
+    if(Init) {
+      CreateStore(Init, LVal);
+    }
+    return LVal;
   }
 
   LLVM_ATTRIBUTE_DEPRECATED(LoadInst *CreateAlignedLoad(Type *Ty, Value *Ptr,
