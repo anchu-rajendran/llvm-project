@@ -24,6 +24,35 @@ namespace llvm {
 /// An interface to create LLVM-IR for OpenMP directives.
 ///
 /// Each OpenMP directive has a corresponding public generator method.
+enum OpenMPSchedType {
+  /// Lower bound for default (unordered) versions.
+  OMP_sch_lower = 32,
+  OMP_sch_static_chunked = 33,
+  OMP_sch_static = 34,
+  OMP_sch_dynamic_chunked = 35,
+  OMP_sch_guided_chunked = 36,
+  OMP_sch_runtime = 37,
+  OMP_sch_auto = 38,
+  /// static with chunk adjustment (e.g., simd)
+  OMP_sch_static_balanced_chunked = 45,
+  /// Lower bound for 'ordered' versions.
+  OMP_ord_lower = 64,
+  OMP_ord_static_chunked = 65,
+  OMP_ord_static = 66,
+  OMP_ord_dynamic_chunked = 67,
+  OMP_ord_guided_chunked = 68,
+  OMP_ord_runtime = 69,
+  OMP_ord_auto = 70,
+  OMP_sch_default = OMP_sch_static,
+  /// dist_schedule types
+  OMP_dist_sch_static_chunked = 91,
+  OMP_dist_sch_static = 92,
+  /// Support for OpenMP 4.5 monotonic and nonmonotonic schedule modifiers.
+  /// Set if the monotonic schedule modifier was present.
+  OMP_sch_modifier_monotonic = (1 << 29),
+  /// Set if the nonmonotonic schedule modifier was present.
+  OMP_sch_modifier_nonmonotonic = (1 << 30),
+};
 class OpenMPIRBuilder {
 public:
   /// Create a new OpenMPIRBuilder operating on the given module \p M. This will

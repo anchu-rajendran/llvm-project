@@ -33,6 +33,8 @@ using namespace llvm;
 using namespace omp;
 using namespace types;
 
+
+
 static cl::opt<bool>
     OptimisticAttributes("openmp-ir-builder-optimistic-attributes", cl::Hidden,
                          cl::desc("Use optimistic attributes describing "
@@ -792,7 +794,25 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), ForExitBB);
   CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), SectionsExitBB);
 
-  //split IndertBB to create the basic block for emitting
+  //emit kmpc_static_for
+  //TODO: Change the following to call the IR Builder function to emit kmpc_for 
+  //after for loop is lowered.
+  Value *ForEntryArgs[] = {
+      Ident,
+      ThreadID,
+      Builder.getInt32(OMP_sch_static), // Schedule type
+      IL,                           // &isLastIter
+      LB,                           // &LB
+      //TODO: check whether UB calculation is right
+      UB,                           // &UB
+      ST,                           // &Stride
+      Builder.getInt32(1),            // Incr
+      Builder.getInt32(1)                                            // Chunk
+  };
+  Function *EntryRTLFn = getOrCreateRuntimeFunctionPtr(OMPRTL___kmpc_for_static_init_4);
+  Instruction *EntryCall = Builder.CreateCall(EntryRTLFn, ForEntryArgs);
+
+  //split InsertBB to create the basic block for emitting
   //for-loop-condition of inner-for-loop
   auto *UI = new UnreachableInst(Builder.getContext(), InsertBB);
   BasicBlock *ForCondBB = InsertBB->splitBasicBlock(UI, "omp.for.cond");
@@ -831,64 +851,14 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   Builder.CreateBr(ForCondBB);
   
   Builder.SetInsertPoint(ForExitBB);
+  Value *ForExitArgs[] = {
+      Ident,
+      ThreadID
+  };
+  Function *ExitRTLFn = getOrCreateRuntimeFunctionPtr(OMPRTL___kmpc_for_static_fini);
+  Instruction *ExitCall = Builder.CreateCall(ExitRTLFn, ForExitArgs);
   return Builder.saveIP();
     
-  //CodeGenFunction::OMPPrivateScope LoopScope(CGF);
-    //if (CGF.EmitOMPFirstprivateClause(S, LoopScope)) {
-    //  // Emit implicit barrier to synchronize threads and avoid data races on
-    //  // initialization of firstprivate variables and post-update of lastprivate
-    //  // variables.
-    //  CGF.CGM.getOpenMPRuntime().emitBarrierCall(
-    //      CGF, S.getBeginLoc(), OMPD_unknown, /*EmitChecks=*/false,
-    //      /*ForceSimpleCall=*/true);
-    //}
-    //CGF.EmitOMPPrivateClause(S, LoopScope);
-    //CGOpenMPRuntime::LastprivateConditionalRAII LPCRegion(CGF, S, IV);
-    //HasLastprivates = CGF.EmitOMPLastprivateClauseInit(S, LoopScope);
-    //CGF.EmitOMPReductionClauseInit(S, LoopScope);
-    //(void)LoopScope.Privatize();
-    //if (isOpenMPTargetExecutionDirective(S.getDirectiveKind()))
-    //  CGF.CGM.getOpenMPRuntime().adjustTargetSpecificDataForLambdas(CGF, S);
-
-    //// Emit static non-chunked loop.
-    //OpenMPScheduleTy ScheduleKind;
-    //ScheduleKind.Schedule = OMPC_SCHEDULE_static;
-    //CGOpenMPRuntime::StaticRTInput StaticInit(
-    //    /*IVSize=*/32, /*IVSigned=*/true, /*Ordered=*/false, IL.getAddress(CGF),
-    //    LB.getAddress(CGF), UB.getAddress(CGF), ST.getAddress(CGF));
-    //CGF.CGM.getOpenMPRuntime().emitForStaticInit(
-    //    CGF, S.getBeginLoc(), S.getDirectiveKind(), ScheduleKind, StaticInit);
-    //// UB = min(UB, GlobalUB);
-    //llvm::Value *UBVal = CGF.EmitLoadOfScalar(UB, S.getBeginLoc());
-    //llvm::Value *MinUBGlobalUB = CGF.Builder.CreateSelect(
-    //    CGF.Builder.CreateICmpSLT(UBVal, GlobalUBVal), UBVal, GlobalUBVal);
-    //CGF.EmitStoreOfScalar(MinUBGlobalUB, UB);
-    //// IV = LB;
-    //CGF.EmitStoreOfScalar(CGF.EmitLoadOfScalar(LB, S.getBeginLoc()), IV);
-    //// while (idx <= UB) { BODY; ++idx; }
-    //CGF.EmitOMPInnerLoop(S, /*RequiresCleanup=*/false, Cond, Inc, BodyGen,
-    //                     [](CodeGenFunction &) {});
-    //// Tell the runtime we are done.
-    //auto &&CodeGen = [&S](CodeGenFunction &CGF) {
-    //  CGF.CGM.getOpenMPRuntime().emitForStaticFinish(CGF, S.getEndLoc(),
-    //                                                 S.getDirectiveKind());
-    //};
-    //CGF.OMPCancelStack.emitExit(CGF, S.getDirectiveKind(), CodeGen);
-    //CGF.EmitOMPReductionClauseFinal(S, /*ReductionKind=*/OMPD_parallel);
-    //// Emit post-update of the reduction variables if IsLastIter != 0.
-    //emitPostUpdateForReductionClause(CGF, S, [IL, &S](CodeGenFunction &CGF) {
-    //  return CGF.Builder.CreateIsNotNull(
-    //      CGF.EmitLoadOfScalar(IL, S.getBeginLoc()));
-    //});
-    //TODO
-
-  //};
-  //create the variables;
-  //create a callback emitting the body of each section and wrapping the code
-
-  //if(!Nowait){
-  //  CreateBarrier(Loc, OMPD_sections, IsCancellable); 
-  //}
 }
 
 OpenMPIRBuilder::InsertPointTy
