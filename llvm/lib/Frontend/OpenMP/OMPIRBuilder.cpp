@@ -761,7 +761,9 @@ void OpenMPIRBuilder::CreateTaskyield(const LocationDescription &Loc) {
   emitTaskyieldImpl(Loc);
 }
 
-using BGenCallbackTy  = llvm::function_ref<void()>;
+
+//TODO: Handle privatisation callbacks, cancellable flang, nowait
+//flag, extract the body of forloop to another callback, sort allocas
 OpenMPIRBuilder::InsertPointTy
 OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
                               ArrayRef<BGenCallbackTy> SectionCBs,
@@ -777,6 +779,7 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   BasicBlock *InsertBB = Builder.GetInsertBlock();
   Function *CurFn = InsertBB->getParent();
 
+  //FIXME: order allocas and stores
   Value *LB = Builder.CreateLVal(Int32,"omp.sections.lb", Builder.getInt32(0));
   ConstantInt *GlobalUBVal = Builder.getInt32(SectionCBs.size() - 1);
   Value *UB = Builder.CreateLVal(Int32, ".omp.sections.ub", GlobalUBVal);
@@ -785,9 +788,9 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   Value *IV = Builder.CreateLVal(Int32, ".omp.sections.iv.", Builder.getInt32(0));
 
   //create new basic blocks
-  auto *ForBodyBB = BasicBlock::Create(M.getContext(), "omp.for.body");
-  auto *ForExitBB = BasicBlock::Create(M.getContext(), "omp.for.exit");
-  auto *ForIncBB = BasicBlock::Create(M.getContext(), "omp.for.inc");
+  auto *ForBodyBB = BasicBlock::Create(M.getContext(), "omp.inner.for.body");
+  auto *ForExitBB = BasicBlock::Create(M.getContext(), "omp.inner.for.exit");
+  auto *ForIncBB = BasicBlock::Create(M.getContext(), "omp.inner.for.inc");
   auto *SectionsExitBB = BasicBlock::Create(M.getContext(), "omp.sections.exit");
   CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), ForIncBB);
   CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), ForBodyBB);
@@ -803,19 +806,21 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
       Builder.getInt32(OMP_sch_static), // Schedule type
       IL,                           // &isLastIter
       LB,                           // &LB
-      //TODO: check whether UB calculation is right
       UB,                           // &UB
       ST,                           // &Stride
       Builder.getInt32(1),            // Incr
       Builder.getInt32(1)                                            // Chunk
   };
   Function *EntryRTLFn = getOrCreateRuntimeFunctionPtr(OMPRTL___kmpc_for_static_init_4);
-  Instruction *EntryCall = Builder.CreateCall(EntryRTLFn, ForEntryArgs);
+  Builder.CreateCall(EntryRTLFn, ForEntryArgs);
+  
+  Instruction *LBRef = Builder.CreateLoad(LB);
+  Builder.CreateStore(LBRef, IV);
 
   //split InsertBB to create the basic block for emitting
   //for-loop-condition of inner-for-loop
   auto *UI = new UnreachableInst(Builder.getContext(), InsertBB);
-  BasicBlock *ForCondBB = InsertBB->splitBasicBlock(UI, "omp.for.cond");
+  BasicBlock *ForCondBB = InsertBB->splitBasicBlock(UI, "omp.inner.for.cond");
   UI->eraseFromParent();
   Builder.SetInsertPoint(ForCondBB);
   Instruction *IVRef = Builder.CreateLoad(IV);
@@ -856,7 +861,16 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
       ThreadID
   };
   Function *ExitRTLFn = getOrCreateRuntimeFunctionPtr(OMPRTL___kmpc_for_static_fini);
-  Instruction *ExitCall = Builder.CreateCall(ExitRTLFn, ForExitArgs);
+  Builder.CreateCall(ExitRTLFn, ForExitArgs);
+  
+  //FIXME: Modify it to call EmitBarrier Function and to handle Cancellable flag
+  //(tried: not working)
+  Function *BarrierFn = getOrCreateRuntimeFunctionPtr(OMPRTL___kmpc_barrier);
+  Value *BarrierArgs[] = {
+      Ident,
+      ThreadID
+  };
+  Builder.CreateCall(BarrierFn, BarrierArgs);
   return Builder.saveIP();
     
 }
