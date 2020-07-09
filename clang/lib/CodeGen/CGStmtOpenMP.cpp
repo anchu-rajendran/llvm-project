@@ -3437,8 +3437,7 @@ void CodeGenFunction::EmitSections(const OMPExecutableDirective &S) {
 void CodeGenFunction::EmitOMPSectionsDirective(const OMPSectionsDirective &S) {
   if (llvm::OpenMPIRBuilder *OMPBuilder = CGM.getOpenMPIRBuilder()) {
     using InsertPointTy = llvm::OpenMPIRBuilder::InsertPointTy;
-    using BodyGenCallbackTy =
-	          llvm::function_ref<void(InsertPointTy AllocaIP, InsertPointTy CodeGenIP,
+    using BodyGenCallbackTy  = std::function<void(InsertPointTy AllocaIP, InsertPointTy CodeGenIP,
 				                          llvm::BasicBlock &ContinuationBB)>;
 
     auto FiniCB = [this](InsertPointTy IP) {
@@ -3450,26 +3449,24 @@ void CodeGenFunction::EmitOMPSectionsDirective(const OMPSectionsDirective &S) {
     llvm::SmallVector<BodyGenCallbackTy, 4> SectionCBVector;
     if(CS) {
       for (const Stmt *SubStmt : CS->children()) {
-       auto sectionCB= [SubStmt, this](InsertPointTy AllocaIP,
+	auto SectionCB = [this, SubStmt](InsertPointTy AllocaIP,
           	      InsertPointTy CodeGenIP,
           	      llvm::BasicBlock &FiniBB){
-        OMPBuilderCBHelpers::InlinedRegionBodyRAII IRB(*this, AllocaIP, FiniBB);
-        
-        OMPBuilderCBHelpers::EmitOMPRegionBody(*this, SubStmt,
-                                               CodeGenIP, FiniBB);
-       };
-       SectionCBVector.push_back(sectionCB);
+	  OMPBuilderCBHelpers::InlinedRegionBodyRAII IRB(*this, AllocaIP, FiniBB);
+          OMPBuilderCBHelpers::EmitOMPRegionBody(*this, SubStmt,
+                                                 CodeGenIP, FiniBB);
+        };
+	SectionCBVector.push_back(SectionCB);
       }
     } else {
-       auto sectionCB= [CS, this](InsertPointTy AllocaIP,
+       auto SectionCB = [this, CS](InsertPointTy AllocaIP,
           	      InsertPointTy CodeGenIP,
           	      llvm::BasicBlock &FiniBB){
-        OMPBuilderCBHelpers::InlinedRegionBodyRAII IRB(*this, AllocaIP, FiniBB);
-        
+	OMPBuilderCBHelpers::InlinedRegionBodyRAII IRB(*this, AllocaIP, FiniBB);
         OMPBuilderCBHelpers::EmitOMPRegionBody(*this, CS,
                                                CodeGenIP, FiniBB);
        };
-       SectionCBVector.push_back(sectionCB);
+       SectionCBVector.push_back(SectionCB);
     }
     ArrayRef<BodyGenCallbackTy> SectionCBs = makeArrayRef(SectionCBVector);
 

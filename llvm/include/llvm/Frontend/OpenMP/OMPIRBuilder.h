@@ -72,6 +72,9 @@ public:
 
   /// Type used throughout for insertion points.
   using InsertPointTy = IRBuilder<>::InsertPoint;
+  using BGenCallbackTy =
+      std::function<void(InsertPointTy AllocaIP, InsertPointTy CodeGenIP,
+                        BasicBlock &ContinuationBB)>;
 
   /// Callback type for variable finalization (think destructors).
   ///
@@ -369,7 +372,7 @@ public:
   ///
   /// \returns The insertion position *after* the sections.
   InsertPointTy CreateSections(const LocationDescription &Loc,
-		              ArrayRef<BodyGenCallbackTy> SectionCBs,
+		              ArrayRef<BGenCallbackTy> SectionCBs,
 			      PrivatizeCallbackTy PrivCB,
 			      FinalizeCallbackTy FiniCB,
 			      bool IsCancellable);

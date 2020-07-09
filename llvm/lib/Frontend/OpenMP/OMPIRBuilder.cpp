@@ -25,7 +25,6 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/CodeExtractor.h"
 #include <sstream>
-#include <iostream>
 
 #define DEBUG_TYPE "openmp-ir-builder"
 
@@ -762,9 +761,10 @@ void OpenMPIRBuilder::CreateTaskyield(const LocationDescription &Loc) {
   emitTaskyieldImpl(Loc);
 }
 
+using BGenCallbackTy  = llvm::function_ref<void()>;
 OpenMPIRBuilder::InsertPointTy
 OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
-                              ArrayRef<BodyGenCallbackTy> SectionCBs,
+                              ArrayRef<BGenCallbackTy> SectionCBs,
 			      PrivatizeCallbackTy PrivCB,
 			      FinalizeCallbackTy FiniCB,
 			      bool IsCancellable) {
@@ -835,7 +835,7 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
     SwitchStmt->addCase(Builder.getInt32(CaseNumber), CaseBB);
     Builder.SetInsertPoint(CaseBB);
     SectionCB(InsertPointTy(),
-		     Builder.saveIP(), *SectionsExitBB);
+		 Builder.saveIP(), *SectionsExitBB);
     CaseNumber++;
   }
 
