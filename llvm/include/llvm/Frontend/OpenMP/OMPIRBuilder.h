@@ -375,7 +375,8 @@ public:
 		              ArrayRef<BGenCallbackTy> SectionCBs,
 			      PrivatizeCallbackTy PrivCB,
 			      FinalizeCallbackTy FiniCB,
-			      bool IsCancellable);
+			      bool IsCancellable,
+			      bool IsNoWait);
 
 private:
   /// Common interface for generating entry calls for OMP Directives.

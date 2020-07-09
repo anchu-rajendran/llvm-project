@@ -3483,7 +3483,7 @@ void CodeGenFunction::EmitOMPSectionsDirective(const OMPSectionsDirective &S) {
       return CodeGenIP;
     };
     
-    Builder.restoreIP(OMPBuilder->CreateSections(Builder, SectionCBs, PrivCB, FiniCB, S.hasCancel()));
+    Builder.restoreIP(OMPBuilder->CreateSections(Builder, SectionCBs, PrivCB, FiniCB, S.hasCancel(), S.getSingleClause<OMPNowaitClause>()));
 
     return;
   }

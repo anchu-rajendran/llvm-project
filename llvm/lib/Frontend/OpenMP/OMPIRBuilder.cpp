@@ -762,14 +762,14 @@ void OpenMPIRBuilder::CreateTaskyield(const LocationDescription &Loc) {
 }
 
 
-//TODO: Handle privatisation callbacks, cancellable flang, nowait
-//flag, extract the body of forloop to another callback, sort allocas
+//TODO: Handle privatisation callbacks, sort allocas
 OpenMPIRBuilder::InsertPointTy
 OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
                               ArrayRef<BGenCallbackTy> SectionCBs,
 			      PrivatizeCallbackTy PrivCB,
 			      FinalizeCallbackTy FiniCB,
-			      bool IsCancellable) {
+			      bool IsCancellable,
+                              bool IsNoWait) {
   if (!updateToLocation(Loc))
     return Loc.IP;
   Constant *SrcLocStr = getOrCreateSrcLocStr(Loc);
@@ -780,6 +780,7 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   Function *CurFn = InsertBB->getParent();
 
   //FIXME: order allocas and stores
+  Builder.SetInsertPoint(InsertPointTy());
   Value *LB = Builder.CreateLVal(Int32,"omp.sections.lb", Builder.getInt32(0));
   ConstantInt *GlobalUBVal = Builder.getInt32(SectionCBs.size() - 1);
   Value *UB = Builder.CreateLVal(Int32, ".omp.sections.ub", GlobalUBVal);
@@ -804,12 +805,12 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
       Ident,
       ThreadID,
       Builder.getInt32(OMP_sch_static), // Schedule type
-      IL,                           // &isLastIter
-      LB,                           // &LB
-      UB,                           // &UB
-      ST,                           // &Stride
-      Builder.getInt32(1),            // Incr
-      Builder.getInt32(1)                                            // Chunk
+      IL,                               // &isLastIter
+      LB,                               // &LB
+      UB,                               // &UB
+      ST,                               // &Stride
+      Builder.getInt32(1),              // Incr
+      Builder.getInt32(1)               // Chunk
   };
   Function *EntryRTLFn = getOrCreateRuntimeFunctionPtr(OMPRTL___kmpc_for_static_init_4);
   Builder.CreateCall(EntryRTLFn, ForEntryArgs);
@@ -817,6 +818,7 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   Instruction *LBRef = Builder.CreateLoad(LB);
   Builder.CreateStore(LBRef, IV);
 
+  
   //split InsertBB to create the basic block for emitting
   //for-loop-condition of inner-for-loop
   auto *UI = new UnreachableInst(Builder.getContext(), InsertBB);
@@ -833,6 +835,18 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   SwitchInst *SwitchStmt = Builder.CreateSwitch(Builder.CreateLoad(IV), SectionsExitBB);
 
   //each section in emitted as a switch case
+  // Iterate through all sections and emit a switch construct:
+  // switch (IV) {
+  //   case 0:
+  //     <SectionStmt[0]>;
+  //     break;
+  // ...
+  //   case <NumSection> - 1:
+  //     <SectionStmt[<NumSection> - 1]>;
+  //     break;
+  // }
+  // .omp.sections.exit:
+
   unsigned CaseNumber = 0;
   for (auto SectionCB : SectionCBs) {
     auto *CaseBB = BasicBlock::Create(M.getContext(), ".omp.sections.case");
@@ -863,14 +877,9 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   Function *ExitRTLFn = getOrCreateRuntimeFunctionPtr(OMPRTL___kmpc_for_static_fini);
   Builder.CreateCall(ExitRTLFn, ForExitArgs);
   
-  //FIXME: Modify it to call EmitBarrier Function and to handle Cancellable flag
-  //(tried: not working)
-  Function *BarrierFn = getOrCreateRuntimeFunctionPtr(OMPRTL___kmpc_barrier);
-  Value *BarrierArgs[] = {
-      Ident,
-      ThreadID
-  };
-  Builder.CreateCall(BarrierFn, BarrierArgs);
+  if(!IsNoWait) {
+    CreateBarrier(Builder, OMPD_sections, true, IsCancellable);
+  }
   return Builder.saveIP();
     
 }
