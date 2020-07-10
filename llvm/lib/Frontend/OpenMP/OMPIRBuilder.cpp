@@ -762,7 +762,7 @@ void OpenMPIRBuilder::CreateTaskyield(const LocationDescription &Loc) {
 }
 
 
-//TODO: Handle privatisation callbacks, sort allocas
+//TODO: Handle privatisation callbacks
 OpenMPIRBuilder::InsertPointTy
 OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
                               ArrayRef<BGenCallbackTy> SectionCBs,
@@ -779,26 +779,82 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   BasicBlock *InsertBB = Builder.GetInsertBlock();
   Function *CurFn = InsertBB->getParent();
 
-  //FIXME: order allocas and stores
-  Builder.SetInsertPoint(InsertPointTy());
+  //allocate and initialize helper vars for for loop
   Value *LB = Builder.CreateLVal(Int32,"omp.sections.lb", Builder.getInt32(0));
   ConstantInt *GlobalUBVal = Builder.getInt32(SectionCBs.size() - 1);
   Value *UB = Builder.CreateLVal(Int32, ".omp.sections.ub", GlobalUBVal);
   Value *ST = Builder.CreateLVal(Int32, ".omp.sections.st.", Builder.getInt32(1));
   Value *IL = Builder.CreateLVal(Int32, ".omp.sections.il.", Builder.getInt32(0));
-  Value *IV = Builder.CreateLVal(Int32, ".omp.sections.iv.", Builder.getInt32(0));
+  Value *IV = Builder.CreateLVal(Int32, ".omp.sections.iv.");
 
-  //create new basic blocks
-  auto *ForBodyBB = BasicBlock::Create(M.getContext(), "omp.inner.for.body");
-  auto *ForExitBB = BasicBlock::Create(M.getContext(), "omp.inner.for.exit");
-  auto *ForIncBB = BasicBlock::Create(M.getContext(), "omp.inner.for.inc");
-  auto *SectionsExitBB = BasicBlock::Create(M.getContext(), "omp.sections.exit");
-  CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), ForIncBB);
-  CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), ForBodyBB);
-  CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), ForExitBB);
-  CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), SectionsExitBB);
+  auto CreateForLoopCB = [&](){
+    Instruction *LBRef = Builder.CreateLoad(LB);
+    Builder.CreateStore(LBRef, IV);
+    
+    //create new basic blocks for emitting the for loop
+    auto *ForBodyBB = BasicBlock::Create(M.getContext(), "omp.inner.for.body");
+    auto *ForExitBB = BasicBlock::Create(M.getContext(), "omp.inner.for.exit");
+    auto *ForIncBB = BasicBlock::Create(M.getContext(), "omp.inner.for.inc");
+    CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), ForIncBB);
+    CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), ForBodyBB);
+    CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), ForExitBB);
+    
+    //split InsertBB to create the basic block for emitting for-loop-condition
+    auto *UI = new UnreachableInst(Builder.getContext(), InsertBB);
+    BasicBlock *ForCondBB = InsertBB->splitBasicBlock(UI, "omp.inner.for.cond");
+    UI->eraseFromParent();
+    Builder.SetInsertPoint(ForCondBB);
+    Instruction *IVRef = Builder.CreateLoad(IV);
+    Instruction *UBRef = Builder.CreateLoad(UB);
+    Value *cmpRef = Builder.CreateICmpSLE(IVRef, UBRef, "cmp");
+    Builder.CreateCondBr(cmpRef, ForBodyBB, ForExitBB);
 
-  //emit kmpc_static_for
+    //callback for creating switch statement inside for body.
+    auto CreateSwitchCB = [&](){
+      auto *SwitchExitBB = BasicBlock::Create(M.getContext(), "omp.switch.exit");
+      CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), SwitchExitBB);
+      
+      SwitchInst *SwitchStmt = Builder.CreateSwitch(Builder.CreateLoad(IV), SwitchExitBB);
+      //each section in emitted as a switch case
+      // Iterate through all sections and emit a switch construct:
+      // switch (IV) {
+      //   case 0:
+      //     <SectionStmt[0]>;
+      //     break;
+      // ...
+      //   case <NumSection> - 1:
+      //     <SectionStmt[<NumSection> - 1]>;
+      //     break;
+      // }
+      // .omp.sections.exit:
+      unsigned CaseNumber = 0;
+      for (auto SectionCB : SectionCBs) {
+        auto *CaseBB = BasicBlock::Create(M.getContext(), ".omp.sections.case");
+        CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), CaseBB);
+        SwitchStmt->addCase(Builder.getInt32(CaseNumber), CaseBB);
+        Builder.SetInsertPoint(CaseBB);
+        SectionCB(InsertPointTy(),
+            	 Builder.saveIP(), *SwitchExitBB);
+        CaseNumber++;
+      }
+      Builder.SetInsertPoint(SwitchExitBB);
+    };
+
+    //for Body
+    Builder.SetInsertPoint(ForBodyBB);
+    CreateSwitchCB();
+    Builder.CreateBr(ForIncBB);
+    
+    //for inc 
+    Builder.SetInsertPoint(ForIncBB);
+    Instruction *IVRef2 = Builder.CreateLoad(IV);
+    Value *Inc = Builder.CreateNSWAdd(IVRef2, Builder.getInt32(1), "inc");
+    Builder.CreateStore(Inc, IV);
+    Builder.CreateBr(ForCondBB);
+    Builder.SetInsertPoint(ForExitBB);
+  };
+
+  //emit kmpc_for
   //TODO: Change the following to call the IR Builder function to emit kmpc_for 
   //after for loop is lowered.
   Value *ForEntryArgs[] = {
@@ -815,61 +871,8 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   Function *EntryRTLFn = getOrCreateRuntimeFunctionPtr(OMPRTL___kmpc_for_static_init_4);
   Builder.CreateCall(EntryRTLFn, ForEntryArgs);
   
-  Instruction *LBRef = Builder.CreateLoad(LB);
-  Builder.CreateStore(LBRef, IV);
+  CreateForLoopCB(); 
 
-  
-  //split InsertBB to create the basic block for emitting
-  //for-loop-condition of inner-for-loop
-  auto *UI = new UnreachableInst(Builder.getContext(), InsertBB);
-  BasicBlock *ForCondBB = InsertBB->splitBasicBlock(UI, "omp.inner.for.cond");
-  UI->eraseFromParent();
-  Builder.SetInsertPoint(ForCondBB);
-  Instruction *IVRef = Builder.CreateLoad(IV);
-  Instruction *UBRef = Builder.CreateLoad(UB);
-  Value *cmpRef = Builder.CreateICmpSLE(IVRef, UBRef, "cmp");
-  Builder.CreateCondBr(cmpRef, ForBodyBB, ForExitBB);
-
-  //for Body
-  Builder.SetInsertPoint(ForBodyBB);
-  SwitchInst *SwitchStmt = Builder.CreateSwitch(Builder.CreateLoad(IV), SectionsExitBB);
-
-  //each section in emitted as a switch case
-  // Iterate through all sections and emit a switch construct:
-  // switch (IV) {
-  //   case 0:
-  //     <SectionStmt[0]>;
-  //     break;
-  // ...
-  //   case <NumSection> - 1:
-  //     <SectionStmt[<NumSection> - 1]>;
-  //     break;
-  // }
-  // .omp.sections.exit:
-
-  unsigned CaseNumber = 0;
-  for (auto SectionCB : SectionCBs) {
-    auto *CaseBB = BasicBlock::Create(M.getContext(), ".omp.sections.case");
-    CurFn->getBasicBlockList().insertAfter(InsertBB->getIterator(), CaseBB);
-    SwitchStmt->addCase(Builder.getInt32(CaseNumber), CaseBB);
-    Builder.SetInsertPoint(CaseBB);
-    SectionCB(InsertPointTy(),
-		 Builder.saveIP(), *SectionsExitBB);
-    CaseNumber++;
-  }
-
-  //sections exit
-  Builder.SetInsertPoint(SectionsExitBB);
-  Builder.CreateBr(ForIncBB);
-  
-  //for inc 
-  Builder.SetInsertPoint(ForIncBB);
-  Instruction *IVRef2 = Builder.CreateLoad(IV);
-  Value *Inc = Builder.CreateNSWAdd(IVRef2, Builder.getInt32(1), "inc");
-  Builder.CreateStore(Inc, IV);
-  Builder.CreateBr(ForCondBB);
-  
-  Builder.SetInsertPoint(ForExitBB);
   Value *ForExitArgs[] = {
       Ident,
       ThreadID
@@ -880,8 +883,10 @@ OpenMPIRBuilder::CreateSections(const LocationDescription &Loc,
   if(!IsNoWait) {
     CreateBarrier(Builder, OMPD_sections, true, IsCancellable);
   }
+  
+  //TODO: Handle PrivCB
+  
   return Builder.saveIP();
-    
 }
 
 OpenMPIRBuilder::InsertPointTy
