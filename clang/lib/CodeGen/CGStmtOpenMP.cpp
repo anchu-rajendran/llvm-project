@@ -5829,7 +5829,9 @@ void CodeGenFunction::EmitOMPCancelDirective(const OMPCancelDirective &S) {
   if (llvm::OpenMPIRBuilder *OMPBuilder = CGM.getOpenMPIRBuilder()) {
     // TODO: This check is necessary as we only generate `omp parallel` through
     // the OpenMPIRBuilder for now.
-    if (S.getCancelRegion() == OMPD_parallel) {
+    if (S.getCancelRegion() == OMPD_parallel || 
+        S.getCancelRegion() == OMPD_sections ||
+        S.getCancelRegion() == OMPD_section) {
       llvm::Value *IfCondition = nullptr;
       if (IfCond)
         IfCondition = EmitScalarExpr(IfCond,
